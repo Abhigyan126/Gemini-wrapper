@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import threading
 import queue
 import json
+from PIL import Image, ImageTk
 
 # Load API key from .env file
 load_dotenv()
@@ -33,16 +34,21 @@ class ChatApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Gemini Wrapper Application")
+        self.root.configure(borderwidth=1, relief="flat")
+
+        # Frame for the main content
+        self.content_frame = tk.Frame(root, bd=1, relief="flat")
+        self.content_frame.pack(padx=1, pady=1, fill=tk.BOTH, expand=True)
 
         self.history = []
         self.prompts = load_prompts()
 
-        self.chat_window = scrolledtext.ScrolledText(root, wrap=tk.WORD, state=tk.DISABLED)
-        self.chat_window.pack(padx=20, pady=5, fill=tk.BOTH, expand=True)
+        self.chat_window = scrolledtext.ScrolledText(self.content_frame, wrap=tk.WORD, state=tk.DISABLED)
+        self.chat_window.pack(padx=2, pady=2, fill=tk.BOTH, expand=True)
 
         # Frame to hold the entry and send button
-        self.entry_frame = tk.Frame(root)
-        self.entry_frame.pack(padx=20, pady=5, fill=tk.X, expand=True)
+        self.entry_frame = tk.Frame(self.content_frame)
+        self.entry_frame.pack(padx=20, pady=5, fill=tk.X, expand=False)
 
         self.message_entry = tk.Entry(self.entry_frame, width=50)
         self.message_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -50,9 +56,6 @@ class ChatApp:
 
         self.send_button = tk.Button(self.entry_frame, text="Send", command=self.send_message)
         self.send_button.pack(side=tk.RIGHT)
-
-        # Queue for communication between threads
-        self.response_queue = queue.Queue()
 
         # Menu
         self.menu = Menu(root)
@@ -69,6 +72,9 @@ class ChatApp:
         self.update_prompt_combobox()
         self.menu.add_cascade(label="Select Prompt", menu=self.prompt_combobox_menu)
 
+        # Queue for communication between threads
+        self.response_queue = queue.Queue()
+
         # Process the response queue periodically
         self.root.after(100, self.process_response_queue)
 
@@ -82,6 +88,9 @@ class ChatApp:
         temp_message = self.prompts.get(selected_prompt, " ") if selected_prompt != "None" else " "
         self.add_message_to_chat("You", question)
         self.message_entry.delete(0, tk.END)
+
+        # Change window border color to green
+        self.root.configure(borderwidth=1, relief="flat", bg="green")
 
         # Start a new thread to generate response
         threading.Thread(target=self.generate_response, args=(temp_message, question,), daemon=True).start()
@@ -107,6 +116,9 @@ class ChatApp:
                     self.add_message_to_chat("AI", response_text)
                     if len(self.history) >= 10:
                         self.history.pop(0)
+                    # Change window border color back to default
+                    self.root.configure(borderwidth=1, relief="flat", bg="#36454F")
+                    break  # Exit the loop after processing one response
             
             except queue.Empty:
                 break
@@ -133,6 +145,11 @@ class ChatApp:
         else:
             self.history.remove(message)
         print(f"Updated history: {self.history}")
+    def clear_chat(self):
+        self.history.clear()
+        self.chat_window.config(state=tk.NORMAL)
+        self.chat_window.delete(1.0, tk.END)
+        self.chat_window.config(state=tk.DISABLED)
 
     def open_prompt_window(self):
         prompt_window = tk.Toplevel(self.root)
