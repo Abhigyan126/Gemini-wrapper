@@ -1,10 +1,11 @@
 import tkinter as tk
-from tkinter import scrolledtext, messagebox, ttk
+from tkinter import scrolledtext, messagebox, ttk, simpledialog, Menu
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 import threading
 import queue
+import json
 
 # Load API key from .env file
 load_dotenv()
@@ -16,12 +17,25 @@ if not api_key:
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
+# Load prompts from JSON file
+def load_prompts():
+    if os.path.exists("prompts.json"):
+        with open("prompts.json", "r") as file:
+            return json.load(file)
+    return {}
+
+# Save prompts to JSON file
+def save_prompts(prompts):
+    with open("prompts.json", "w") as file:
+        json.dump(prompts, file, indent=4)
+
 class ChatApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Gemini Wrapper Application")
 
         self.history = []
+        self.prompts = load_prompts()
 
         self.chat_window = scrolledtext.ScrolledText(root, wrap=tk.WORD, state=tk.DISABLED)
         self.chat_window.pack(padx=20, pady=5, fill=tk.BOTH, expand=True)
@@ -40,21 +54,41 @@ class ChatApp:
         # Queue for communication between threads
         self.response_queue = queue.Queue()
 
+        # Menu
+        self.menu = Menu(root)
+        root.config(menu=self.menu)
+
+        self.prompt_menu = Menu(self.menu, tearoff=0)
+        self.menu.add_cascade(label="Prompts", menu=self.prompt_menu)
+        self.prompt_menu.add_command(label="Manage Prompts", command=self.open_prompt_window)
+
+        # Dropdown for selecting a prompt
+        self.selected_prompt = tk.StringVar()
+        self.selected_prompt.set("None")
+        self.prompt_combobox_menu = Menu(self.menu, tearoff=0)
+        self.update_prompt_combobox()
+        self.menu.add_cascade(label="Select Prompt", menu=self.prompt_combobox_menu)
+
+        # Process the response queue periodically
+        self.root.after(100, self.process_response_queue)
+
     def send_message(self, event=None):
         question = self.message_entry.get()
         if not question.strip():
             messagebox.showwarning("Empty message", "Please enter a message.")
             return
 
+        selected_prompt = self.selected_prompt.get()
+        temp_message = self.prompts.get(selected_prompt, " ") if selected_prompt != "None" else " "
         self.add_message_to_chat("You", question)
         self.message_entry.delete(0, tk.END)
 
         # Start a new thread to generate response
-        threading.Thread(target=self.generate_response, args=(question,), daemon=True).start()
+        threading.Thread(target=self.generate_response, args=(temp_message, question,), daemon=True).start()
 
-    def generate_response(self, question):
+    def generate_response(self, temp_message, question):
         try:
-            message = f"you are assistant names camile, your job is to answer my question :{question}, these are our previous question answer chat history all the paragraphs are replaied by you{self.history}"
+            message = temp_message + f"you are camile, your job is to answer my question :{question}, these are our previous question answer chat history all the paragraphs are replaied by you{self.history}"
             response = model.generate_content([message])
             response_text = response.text.strip()
 
@@ -100,9 +134,71 @@ class ChatApp:
             self.history.remove(message)
         print(f"Updated history: {self.history}")
 
+    def open_prompt_window(self):
+        prompt_window = tk.Toplevel(self.root)
+        prompt_window.title("Manage Prompts")
+        prompt_window.geometry("400x300")
+
+        # Listbox to display prompts
+        self.prompt_listbox = tk.Listbox(prompt_window)
+        self.prompt_listbox.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.update_prompt_listbox()
+
+        # Buttons to manage prompts
+        button_frame = tk.Frame(prompt_window)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        add_button = tk.Button(button_frame, text="Add", command=self.add_prompt)
+        add_button.pack(side=tk.LEFT, padx=5)
+
+        edit_button = tk.Button(button_frame, text="Edit", command=self.edit_prompt)
+        edit_button.pack(side=tk.LEFT, padx=5)
+
+        delete_button = tk.Button(button_frame, text="Delete", command=self.delete_prompt)
+        delete_button.pack(side=tk.LEFT, padx=5)
+
+    def update_prompt_listbox(self):
+        self.prompt_listbox.delete(0, tk.END)
+        for prompt_name in self.prompts:
+            self.prompt_listbox.insert(tk.END, prompt_name)
+
+    def update_prompt_combobox(self):
+        self.prompt_combobox_menu.delete(0, tk.END)
+        self.prompt_combobox_menu.add_radiobutton(label="None", variable=self.selected_prompt, value="None")
+        for prompt_name in self.prompts.keys():
+            self.prompt_combobox_menu.add_radiobutton(label=prompt_name, variable=self.selected_prompt, value=prompt_name)
+
+    def add_prompt(self):
+        prompt_name = simpledialog.askstring("Prompt Name", "Enter the name of the prompt:")
+        if prompt_name:
+            prompt_text = simpledialog.askstring("Prompt Text", "Enter the text for the prompt:")
+            if prompt_text:
+                self.prompts[prompt_name] = prompt_text
+                save_prompts(self.prompts)
+                self.update_prompt_listbox()
+                self.update_prompt_combobox()
+
+    def edit_prompt(self):
+        selected_prompt = self.prompt_listbox.get(tk.ACTIVE)
+        if selected_prompt:
+            new_prompt_text = simpledialog.askstring("Edit Prompt", f"Edit the text for '{selected_prompt}':", initialvalue=self.prompts[selected_prompt])
+            if new_prompt_text:
+                self.prompts[selected_prompt] = new_prompt_text
+                save_prompts(self.prompts)
+                self.update_prompt_listbox()
+                self.update_prompt_combobox()
+
+    def delete_prompt(self):
+        selected_prompt = self.prompt_listbox.get(tk.ACTIVE)
+        if selected_prompt:
+            del self.prompts[selected_prompt]
+            save_prompts(self.prompts)
+            self.update_prompt_listbox()
+            self.update_prompt_combobox()
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = ChatApp(root)
     root.geometry("500x400")
-    root.after(100, app.process_response_queue)
     root.mainloop()
