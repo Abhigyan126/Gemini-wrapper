@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import scrolledtext, messagebox, ttk, simpledialog, Menu
+from tkinter import scrolledtext, messagebox, ttk, simpledialog, Menu, filedialog
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
@@ -84,6 +84,24 @@ class ChatApp:
             messagebox.showwarning("Empty message", "Please enter a message.")
             return
 
+        # Check for the "@clear" command
+        if question.strip() == "@clear":
+            self.clear_chat()
+            self.message_entry.delete(0, tk.END)
+            return
+        
+        # Check for the "@save" command
+        if question.strip() == "@save":
+            self.save_chat_history()
+            self.message_entry.delete(0, tk.END)
+            return
+        
+        # Check for the "@load" command
+        if question.strip() == "@load":
+            self.load_chat_history()
+            self.message_entry.delete(0, tk.END)
+            return
+
         selected_prompt = self.selected_prompt.get()
         temp_message = self.prompts.get(selected_prompt, " ") if selected_prompt != "None" else " "
         self.add_message_to_chat("You", question)
@@ -97,12 +115,11 @@ class ChatApp:
 
     def generate_response(self, temp_message, question):
         try:
-            message = temp_message + f"you are camile, your job is to answer my question :{question}, these are our previous question answer chat history all the paragraphs are replaied by you{self.history}"
+            message = temp_message + f"you are Camile, your job is to answer my question: {question}. These are our previous question-answer chat history all the paragraphs are replied by you: {self.history}"
             response = model.generate_content([message])
             response_text = response.text.strip()
 
             self.response_queue.put(response_text)
-        
         except Exception as e:
             self.response_queue.put(f"Error: {str(e)}")
 
@@ -119,7 +136,6 @@ class ChatApp:
                     # Change window border color back to default
                     self.root.configure(borderwidth=1, relief="flat", bg="#36454F")
                     break  # Exit the loop after processing one response
-            
             except queue.Empty:
                 break
 
@@ -145,11 +161,37 @@ class ChatApp:
         else:
             self.history.remove(message)
         print(f"Updated history: {self.history}")
+
     def clear_chat(self):
         self.history.clear()
         self.chat_window.config(state=tk.NORMAL)
         self.chat_window.delete(1.0, tk.END)
         self.chat_window.config(state=tk.DISABLED)
+
+    def save_chat_history(self):
+        file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
+        if file_path:
+            with open(file_path, 'w') as file:
+                for message in self.chat_window.get("1.0", tk.END).strip().split("\n"):
+                    file.write(message + "\n")
+            messagebox.showinfo("Success", "Chat history saved successfully.")
+
+    def load_chat_history(self):
+        file_path = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
+        if file_path:
+            with open(file_path, 'r') as file:
+                self.clear_chat()
+                for line in file:
+                    line = line.strip()
+                    if ": " in line:
+                        sender, message = line.split(": ", 1)
+                        self.add_message_to_chat(sender, message)
+                    else:
+                        # Handle unrecognized lines as messages without a sender specified
+                        print("detected unknow +-")
+            messagebox.showinfo("Success", "Chat history loaded successfully.")
+
+
 
     def open_prompt_window(self):
         prompt_window = tk.Toplevel(self.root)
